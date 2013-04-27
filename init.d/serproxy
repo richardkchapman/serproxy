@@ -1,0 +1,121 @@
+#! /bin/bash
+#
+# serproxy	init script for serproxy
+#
+
+### BEGIN INIT INFO
+# Provides:          serproxy
+# Required-Start:    $network
+# Required-Stop:     $network
+# Should-Start:
+# Should-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Allows simple network connections to serial ports
+# Description:       This daemon allows telnet and tcp sessions to be established with a unit's serial ports.
+### END INIT INFO
+
+set -e
+
+if [ -r "/lib/lsb/init-functions" ]; then
+  . /lib/lsb/init-functions
+else
+  echo "E: /lib/lsb/init-functions not found, lsb-base (>= 3.0-6) needed"
+  exit 1
+fi
+
+LANG=C
+export LANG
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/usr/local/bin/serproxy.py
+NAME=serproxy
+DESC="Serial port to network proxy"
+PIDFILE=/var/run/$NAME.pid
+DEVICE=/dev/rfcomm1
+PORT=4040
+OPTIONS=
+
+test -f $DAEMON || exit 0
+
+log()
+{
+  case "$1" in
+    [[:digit:]]*) success=$1; shift;;
+    *) :;;
+  esac
+  log_action_begin_msg "$1"; shift
+  log_action_end_msg ${success:-0} "$*"
+}
+
+start () {
+  if ! pidofproc -p "$PIDFILE" >/dev/null; then
+      start_daemon -p $PIDFILE $DAEMON -d -p $PIDFILE $DEVICE $PORT $OPTIONS
+      ret=$?
+  else
+    log_failure_msg "already running!"
+    log_end_msg 1
+    exit 1
+  fi
+  return $ret
+}
+
+stop () {
+  SIG="${9:--ABRT}"
+  killproc -p "$PIDFILE" "$DAEMON" "$SIG"
+  # this is a workaround for killproc -TERM not zapping the pidfile
+  if ! pidofproc -p "$PIDFILE" >/dev/null; then
+    rm -f $PIDFILE
+  fi
+}
+
+status()
+{
+  log_action_begin_msg "checking $DESC"
+  if pidofproc -p "$PIDFILE" >/dev/null; then
+    log_action_end_msg 0 "$NAME running"
+  else
+    if [ -e "$PIDFILE" ]; then
+      log_action_end_msg 1 "$NAME failed"
+      exit 1
+    else
+      log_action_end_msg 0 "$NAME not running"
+      exit 3
+    fi
+  fi
+}
+
+case "$1" in
+  start)
+	log_daemon_msg "Starting $DESC" "$NAME"
+	start
+	log_end_msg 0
+	;;
+  stop)
+	log_daemon_msg "Stopping $DESC" "$NAME"
+	stop
+	log_end_msg 0
+	;;
+  reload|force-reload)
+	log_daemon_msg "Reloading $DESC" "$NAME"
+	stop "-HUP"
+	log_end_msg 0
+	;;
+  restart)
+	log_daemon_msg "Restarting $DESC" "$NAME"
+	stop
+	sleep 1
+	start
+	log_end_msg 0
+	;;
+  status)
+  	status
+	;;
+  *)
+	N=/etc/init.d/$NAME
+	echo "Usage: $N {start|stop|restart|reload|force-reload|status}" >&2
+	exit 1
+	;;
+esac
+
+exit 0
